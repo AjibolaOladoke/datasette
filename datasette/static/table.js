@@ -1,0 +1,896 @@
+var DROPDOWN_HTML = `<div class="datasette-menu-heading" role="presentation">
+<strong class="datasette-menu-title"></strong>
+</div>
+<ul class="dropdown-actions" role="none"></ul>
+<p class="dropdown-column-type"></p>
+<p class="dropdown-column-description"></p>`;
+
+var DROPDOWN_ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <circle cx="12" cy="12" r="3"></circle>
+  <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+</svg>`;
+
+var SET_COLUMN_TYPE_DIALOG_ID = "set-column-type-dialog";
+var setColumnTypeDialogState = null;
+function getParams() {
+  return new URLSearchParams(location.search);
+}
+
+function paramsToUrl(params) {
+  var s = params.toString();
+  return s ? "?" + s : location.pathname;
+}
+
+function sortDescUrl(column) {
+  var params = getParams();
+  params.set("_sort_desc", column);
+  params.delete("_sort");
+  params.delete("_next");
+  return paramsToUrl(params);
+}
+
+function sortAscUrl(column) {
+  var params = getParams();
+  params.set("_sort", column);
+  params.delete("_sort_desc");
+  params.delete("_next");
+  return paramsToUrl(params);
+}
+
+function facetUrl(column) {
+  var params = getParams();
+  params.append("_facet", column);
+  return paramsToUrl(params);
+}
+
+function hideColumnUrl(column) {
+  var params = getParams();
+  params.append("_nocol", column);
+  return paramsToUrl(params);
+}
+
+function showAllColumnsUrl() {
+  var params = getParams();
+  params.delete("_nocol");
+  params.delete("_col");
+  return paramsToUrl(params);
+}
+
+function notBlankUrl(column) {
+  var params = getParams();
+  params.set(`${column}__notblank`, "1");
+  return paramsToUrl(params);
+}
+
+function getDisplayedFacets() {
+  return Array.from(document.querySelectorAll(".facet-info")).map(
+    (el) => el.dataset.column,
+  );
+}
+
+function getColumnClassName(th) {
+  return Array.from(th.classList).find((className) =>
+    className.startsWith("col-"),
+  );
+}
+
+function getColumnCells(th) {
+  var table = th.closest("table");
+  var columnClassName = getColumnClassName(th);
+  if (!table || !columnClassName) {
+    return [];
+  }
+  return Array.from(table.querySelectorAll("td." + columnClassName));
+}
+
+function getColumnMeta(th) {
+  return {
+    columnName: th.dataset.column,
+    columnNotNull: th.dataset.columnNotNull === "1",
+    columnType: th.dataset.columnType,
+    isPk: th.dataset.isPk === "1",
+  };
+}
+
+function getColumnTypeText(th) {
+  var columnType = th.dataset.columnType;
+  if (!columnType) {
+    return null;
+  }
+  var notNull = th.dataset.columnNotNull === "1" ? " NOT NULL" : "";
+  return `Type: ${columnType.toUpperCase()}${notNull}`;
+}
+
+function getSetColumnTypeData() {
+  return window._setColumnTypeData || null;
+}
+
+function getSetColumnTypeConfig(column) {
+  var data = getSetColumnTypeData();
+  if (!data || !data.columns) {
+    return null;
+  }
+  return data.columns[column] || null;
+}
+
+function canSetColumnType() {
+  return !!(getSetColumnTypeData() && window.HTMLDialogElement && window.fetch);
+}
+
+function setColumnTypeActionLabel(column) {
+  var columnConfig = getSetColumnTypeConfig(column);
+  if (!columnConfig) {
+    return null;
+  }
+  return columnConfig.current
+    ? `Custom type: ${columnConfig.current.type}`
+    : "Set custom type";
+}
+
+function createSetColumnTypeOption(value, name, description, checked) {
+  var label = document.createElement("label");
+  label.className = "set-column-type-option";
+
+  var input = document.createElement("input");
+  input.type = "radio";
+  input.name = "set-column-type-choice";
+  input.value = value;
+  input.checked = checked;
+
+  var content = document.createElement("span");
+  content.className = "set-column-type-option-content";
+
+  var title = document.createElement("span");
+  title.className = "set-column-type-option-name";
+  title.textContent = name;
+
+  var detail = document.createElement("span");
+  detail.className = "set-column-type-option-description";
+  detail.textContent = description;
+
+  content.appendChild(title);
+  content.appendChild(detail);
+  label.appendChild(input);
+  label.appendChild(content);
+  return label;
+}
+
+function setSetColumnTypeDialogBusy(state, isBusy) {
+  state.isBusy = isBusy;
+  state.modal.busy = isBusy;
+  state.saveButton.disabled = isBusy;
+  state.cancelButton.disabled = isBusy;
+  Array.from(
+    state.optionsWrap.querySelectorAll('input[name="set-column-type-choice"]'),
+  ).forEach(function (input) {
+    input.disabled = isBusy;
+  });
+  state.saveButton.textContent = isBusy ? "Saving..." : "Save";
+}
+
+function clearSetColumnTypeDialogError(state) {
+  state.error.hidden = true;
+  state.error.textContent = "";
+}
+
+function showSetColumnTypeDialogError(state, message) {
+  state.error.hidden = false;
+  state.error.textContent = message;
+}
+
+function ensureSetColumnTypeDialog() {
+  if (setColumnTypeDialogState) {
+    return setColumnTypeDialogState;
+  }
+  if (!window.HTMLDialogElement) {
+    return null;
+  }
+
+  var modal = DatasetteModal.create();
+  var dialog = modal.dialog;
+  dialog.id = SET_COLUMN_TYPE_DIALOG_ID;
+  dialog.className = "set-column-type-dialog";
+  dialog.setAttribute("aria-labelledby", "set-column-type-title");
+  dialog.innerHTML = `
+    <div class="modal-header">
+      <span class="modal-title" id="set-column-type-title">Set custom type</span>
+      <span class="modal-meta"></span>
+    </div>
+    <p class="set-column-type-status"></p>
+    <p class="set-column-type-error" hidden></p>
+    <div class="modal-body set-column-type-options"></div>
+    <div class="modal-footer">
+      <span class="footer-info"></span>
+      <button type="button" class="modal-btn modal-btn-ghost set-column-type-cancel">Cancel</button>
+      <button type="button" class="modal-btn modal-btn-primary set-column-type-save">Save</button>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  setColumnTypeDialogState = {
+    modal: modal,
+    dialog: dialog,
+    meta: dialog.querySelector(".modal-meta"),
+    status: dialog.querySelector(".set-column-type-status"),
+    error: dialog.querySelector(".set-column-type-error"),
+    optionsWrap: dialog.querySelector(".set-column-type-options"),
+    footerInfo: dialog.querySelector(".footer-info"),
+    cancelButton: dialog.querySelector(".set-column-type-cancel"),
+    saveButton: dialog.querySelector(".set-column-type-save"),
+    currentColumn: null,
+    currentConfig: null,
+    isBusy: false,
+  };
+
+  setColumnTypeDialogState.cancelButton.addEventListener("click", function () {
+    modal.requestClose("cancel");
+  });
+
+  dialog.addEventListener("close", function () {
+    clearSetColumnTypeDialogError(setColumnTypeDialogState);
+    setSetColumnTypeDialogBusy(setColumnTypeDialogState, false);
+  });
+
+  setColumnTypeDialogState.saveButton.addEventListener(
+    "click",
+    async function () {
+      var state = setColumnTypeDialogState;
+      var selected = state.dialog.querySelector(
+        'input[name="set-column-type-choice"]:checked',
+      );
+      var selectedType = selected ? selected.value : "";
+      var currentType = state.currentConfig.current
+        ? state.currentConfig.current.type
+        : "";
+
+      if (selectedType === currentType) {
+        state.modal.close();
+        return;
+      }
+
+      clearSetColumnTypeDialogError(state);
+      setSetColumnTypeDialogBusy(state, true);
+
+      var payload = {
+        column: state.currentColumn,
+        column_type: selectedType ? { type: selectedType } : null,
+      };
+
+      try {
+        var response = await fetch(getSetColumnTypeData().path, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+          },
+          body: JSON.stringify(payload),
+        });
+        var data = await response.json();
+        if (!response.ok || data.ok === false) {
+          var message = (data.errors || ["Request failed"]).join(" ");
+          throw new Error(message);
+        }
+        location.reload();
+      } catch (error) {
+        setSetColumnTypeDialogBusy(state, false);
+        showSetColumnTypeDialogError(state, error.message || "Request failed");
+      }
+    },
+  );
+
+  return setColumnTypeDialogState;
+}
+
+function openSetColumnTypeDialog(th) {
+  var column = th.dataset.column;
+  var columnConfig = getSetColumnTypeConfig(column);
+  if (!columnConfig) {
+    return;
+  }
+
+  var state = ensureSetColumnTypeDialog();
+  if (!state) {
+    return;
+  }
+
+  clearSetColumnTypeDialogError(state);
+  setSetColumnTypeDialogBusy(state, false);
+  state.currentColumn = column;
+  state.currentConfig = columnConfig;
+  state.status.textContent = `Column: ${column}`;
+  state.meta.textContent = getColumnTypeText(th) || "Type unavailable";
+  state.footerInfo.textContent = columnConfig.current
+    ? `Current custom type: ${columnConfig.current.type}`
+    : "No custom type set.";
+  state.optionsWrap.innerHTML = "";
+
+  var currentType = columnConfig.current ? columnConfig.current.type : "";
+  state.optionsWrap.appendChild(
+    createSetColumnTypeOption(
+      "",
+      "No custom type",
+      "Use standard Datasette rendering without a custom type.",
+      currentType === "",
+    ),
+  );
+
+  columnConfig.options.forEach(function (option) {
+    state.optionsWrap.appendChild(
+      createSetColumnTypeOption(
+        option.name,
+        option.name,
+        option.description,
+        option.name === currentType,
+      ),
+    );
+  });
+
+  if (!columnConfig.options.length) {
+    var emptyState = document.createElement("p");
+    emptyState.className = "set-column-type-empty";
+    emptyState.textContent =
+      "No registered custom types are compatible with this SQLite type.";
+    state.optionsWrap.appendChild(emptyState);
+  }
+
+  state.modal.show();
+  var selectedOption = state.dialog.querySelector(
+    'input[name="set-column-type-choice"]:checked',
+  );
+  if (selectedOption) {
+    selectedOption.focus();
+  } else {
+    state.saveButton.focus();
+  }
+}
+
+function canChooseColumns() {
+  return !!(
+    document.querySelector("column-chooser") && window._columnChooserData
+  );
+}
+
+function shouldShowShowAllColumns() {
+  var params = getParams();
+  return params.getAll("_nocol").length || params.getAll("_col").length;
+}
+
+function hasMultipleVisibleColumns(manager) {
+  return (
+    Array.from(
+      document.querySelectorAll(manager.selectors.tableHeaders),
+    ).filter((th) => th.dataset.column && th.dataset.isLinkColumn !== "1")
+      .length > 1
+  );
+}
+
+function buildColumnActionItems(manager, th, options) {
+  options = options || {};
+  var params = getParams();
+  var column = th.dataset.column;
+  var columnActions = [];
+  var isSortable = !!th.querySelector("a");
+  var isFirstColumn = th.parentElement.querySelector("th:first-of-type") === th;
+  var isSinglePk =
+    th.dataset.isPk === "1" &&
+    document.querySelectorAll('th[data-is-pk="1"]').length === 1;
+  var hasBlankValues = getColumnCells(th).some(
+    (el) => el.innerText.trim() === "",
+  );
+
+  if (isSortable && params.get("_sort") !== column) {
+    columnActions.push({
+      label: "Sort ascending",
+      href: sortAscUrl(column),
+    });
+  }
+
+  if (isSortable && params.get("_sort_desc") !== column) {
+    columnActions.push({
+      label: "Sort descending",
+      href: sortDescUrl(column),
+    });
+  }
+
+  if (
+    DATASETTE_ALLOW_FACET &&
+    !isFirstColumn &&
+    !getDisplayedFacets().includes(column) &&
+    !isSinglePk
+  ) {
+    columnActions.push({
+      label: "Facet by this",
+      href: facetUrl(column),
+    });
+  }
+
+  if (options.includeChooseColumns && canChooseColumns()) {
+    columnActions.push({
+      label: "Choose columns",
+      menuGroupStart: true,
+      href: "#",
+      onClick:
+        options.onChooseColumns ||
+        function (ev) {
+          ev.preventDefault();
+          openColumnChooser();
+        },
+    });
+  }
+
+  if (canSetColumnType() && getSetColumnTypeConfig(column)) {
+    columnActions.push({
+      label: setColumnTypeActionLabel(column),
+      href: "#",
+      onClick:
+        options.onSetColumnType ||
+        function (ev) {
+          ev.preventDefault();
+          window.setTimeout(function () {
+            openSetColumnTypeDialog(th);
+          }, 0);
+        },
+    });
+  }
+
+  if (th.dataset.isPk !== "1" && hasMultipleVisibleColumns(manager)) {
+    columnActions.push({
+      label: "Hide this column",
+      menuGroupStart: true,
+      href: hideColumnUrl(column),
+    });
+  }
+
+  if (options.includeShowAllColumns && shouldShowShowAllColumns()) {
+    columnActions.push({
+      label: "Show all columns",
+      href: showAllColumnsUrl(),
+    });
+  }
+
+  if (params.get(`${column}__notblank`) !== "1" && hasBlankValues) {
+    columnActions.push({
+      label: "Show not-blank rows",
+      href: notBlankUrl(column),
+    });
+  }
+
+  return columnActions.concat(manager.makeColumnActions(getColumnMeta(th)));
+}
+
+function buildColumnActionState(manager, th, options) {
+  return {
+    column: th.dataset.column,
+    columnDescription: th.dataset.columnDescription || null,
+    columnMeta: getColumnMeta(th),
+    columnTypeText: getColumnTypeText(th),
+    actionItems: buildColumnActionItems(manager, th, options),
+  };
+}
+
+function initializeColumnActions(manager) {
+  manager.columnActions = {
+    buildColumnActionState: function (th, options) {
+      return buildColumnActionState(manager, th, options);
+    },
+    buildColumnActionItems: function (th, options) {
+      return buildColumnActionItems(manager, th, options);
+    },
+    canChooseColumns: canChooseColumns,
+    facetUrl: facetUrl,
+    getColumnMeta: getColumnMeta,
+    getColumnTypeText: getColumnTypeText,
+    hideColumnUrl: hideColumnUrl,
+    notBlankUrl: notBlankUrl,
+    shouldShowShowAllColumns: shouldShowShowAllColumns,
+    showAllColumnsUrl: showAllColumnsUrl,
+    sortAscUrl: sortAscUrl,
+    sortDescUrl: sortDescUrl,
+  };
+}
+
+function renderActionLink(itemConfig) {
+  var newLink = document.createElement("a");
+  newLink.textContent = itemConfig.label;
+  newLink.href = itemConfig.href || "#";
+  if (itemConfig.onClick) {
+    newLink.addEventListener("click", itemConfig.onClick);
+  }
+  return newLink;
+}
+
+/** Main initialization function for Datasette Table interactions */
+const initDatasetteTable = function (manager) {
+  // Feature detection
+  if (!window.URLSearchParams) {
+    return;
+  }
+  function closeMenu() {
+    window.DatasetteMenu.close({ restoreFocus: true });
+  }
+
+  const tableWrapper = document.querySelector(manager.selectors.tableWrapper);
+  if (tableWrapper) {
+    tableWrapper.addEventListener("scroll", () => window.DatasetteMenu.close());
+  }
+
+  function onTableHeaderClick(ev) {
+    ev.preventDefault();
+    ev.stopPropagation();
+    const trigger = ev.currentTarget;
+    if (ev.type === "click" && window.DatasetteMenu.isOpenFor(trigger)) {
+      closeMenu();
+      return;
+    }
+    window.DatasetteMenu.close();
+    const th = trigger.closest("th");
+    menu.innerHTML = DROPDOWN_HTML;
+    menu.setAttribute("role", "menu");
+    const heading = menu.querySelector(".datasette-menu-title");
+    heading.textContent = th.dataset.column;
+    menu.setAttribute("aria-label", "Actions for column " + th.dataset.column);
+    var actionState = manager.columnActions.buildColumnActionState(th, {
+      includeChooseColumns: true,
+      includeShowAllColumns: true,
+      onChooseColumns: function (ev) {
+        ev.preventDefault();
+        closeMenu();
+        openColumnChooser();
+      },
+      onSetColumnType: function (ev) {
+        ev.preventDefault();
+        closeMenu();
+        window.setTimeout(function () {
+          openSetColumnTypeDialog(th);
+        }, 0);
+      },
+    });
+    var menuList = menu.querySelector("ul.dropdown-actions");
+    menuList.innerHTML = "";
+    actionState.actionItems.forEach((itemConfig) => {
+      var menuItem = document.createElement("li");
+      menuItem.setAttribute("role", "none");
+      if (itemConfig.menuGroupStart) menuItem.classList.add("menu-separator");
+      const link = renderActionLink(itemConfig);
+      link.setAttribute("role", "menuitem");
+      menuItem.appendChild(link);
+      menuList.appendChild(menuItem);
+    });
+
+    var columnTypeP = menu.querySelector(".dropdown-column-type");
+    if (actionState.columnTypeText) {
+      columnTypeP.style.display = "block";
+      columnTypeP.innerText = actionState.columnTypeText;
+    } else {
+      columnTypeP.style.display = "none";
+    }
+
+    var columnDescriptionP = menu.querySelector(".dropdown-column-description");
+    if (actionState.columnDescription) {
+      columnDescriptionP.innerText = actionState.columnDescription;
+      columnDescriptionP.style.display = "block";
+    } else {
+      columnDescriptionP.style.display = "none";
+    }
+    window.DatasetteMenu.open({
+      trigger,
+      panel: menu,
+      focusLast: ev.key === "ArrowUp",
+      focusMenu: ev.type === "keydown" || ev.detail === 0,
+    });
+  }
+
+  const menu = document.createElement("div");
+  menu.id = "column-actions-menu";
+  menu.className = "column-actions-menu datasette-menu";
+  menu.hidden = true;
+  document.body.appendChild(menu);
+
+  const ths = Array.from(
+    document.querySelectorAll(manager.selectors.tableHeaders),
+  );
+  ths.forEach((th) => {
+    if (!th.querySelector("a")) return;
+    const trigger = document.createElement("button");
+    trigger.type = "button";
+    trigger.className = "column-menu-trigger";
+    trigger.setAttribute(
+      "aria-label",
+      "Actions for column " + th.dataset.column,
+    );
+    trigger.setAttribute("aria-haspopup", "menu");
+    trigger.setAttribute("aria-expanded", "false");
+    trigger.setAttribute("aria-controls", menu.id);
+    trigger.innerHTML = DROPDOWN_ICON_SVG;
+    const icon = trigger.querySelector("svg");
+    icon.setAttribute("aria-hidden", "true");
+    trigger.addEventListener("click", onTableHeaderClick);
+    trigger.addEventListener("keydown", (event) => {
+      if (["ArrowDown", "ArrowUp"].includes(event.key))
+        onTableHeaderClick(event);
+    });
+    th.appendChild(trigger);
+  });
+};
+
+function filterRowSelector(manager) {
+  return manager.selectors.filterRows || manager.selectors.filterRow;
+}
+
+function filterRowsWithControls(manager) {
+  return Array.from(
+    document.querySelectorAll(filterRowSelector(manager)),
+  ).filter((el) => el.querySelector(".filter-op"));
+}
+
+function filterRowNumberFromName(name) {
+  var match = name && name.match(/^_filter_column_(\d+)$/);
+  return match ? parseInt(match[1], 10) : 0;
+}
+
+function nextFilterRowNumber(manager) {
+  return (
+    filterRowsWithControls(manager).reduce((max, row) => {
+      var column = row.querySelector("select");
+      return Math.max(max, filterRowNumberFromName(column && column.name));
+    }, 0) + 1
+  );
+}
+
+function setFilterRowNumber(row, number) {
+  row.querySelector("select").name = `_filter_column_${number}`;
+  row.querySelector(".filter-op select").name = `_filter_op_${number}`;
+  row.querySelector("input.filter-value").name = `_filter_value_${number}`;
+}
+
+function resetFilterRow(row) {
+  row.querySelector("select").value = "";
+  row.querySelector(".filter-op select").value = "exact";
+  row.querySelector("input.filter-value").value = "";
+}
+
+function updateFilterRowButtons(manager) {
+  var rows = filterRowsWithControls(manager);
+  rows.forEach((row, index) => {
+    var removeButton = row.querySelector(".filter-row-remove");
+    var addButton = row.querySelector(".filter-row-add");
+    var column = row.querySelector("select");
+    if (removeButton) {
+      removeButton.hidden = index === 0;
+    }
+    if (addButton) {
+      addButton.hidden = index !== rows.length - 1 || !column.value;
+    }
+    var visibleButtonCount = [removeButton, addButton].filter(
+      function (button) {
+        return button && !button.hidden;
+      },
+    ).length;
+    row.classList.toggle(
+      "filter-controls-row-has-buttons",
+      visibleButtonCount > 0,
+    );
+    row.classList.toggle(
+      "filter-controls-row-one-button",
+      visibleButtonCount === 1,
+    );
+    row.classList.toggle(
+      "filter-controls-row-two-buttons",
+      visibleButtonCount === 2,
+    );
+  });
+}
+
+function cloneFilterRow(row) {
+  var clone = row.cloneNode(true);
+  clone.querySelector("select").name = "_filter_column";
+  clone.querySelector(".filter-op select").name = "_filter_op";
+  clone.querySelector("input.filter-value").name = "_filter_value";
+  resetFilterRow(clone);
+  clone
+    .querySelectorAll(".filter-row-icon")
+    .forEach((button) => button.remove());
+  return clone;
+}
+
+var FILTER_REMOVE_ICON_SVG = `<svg class="filter-row-remove-icon" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M3 6h18"></path>
+  <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+  <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path>
+  <path d="M10 11v6"></path>
+  <path d="M14 11v6"></path>
+</svg>`;
+
+var FILTER_ADD_ICON_SVG = `<svg class="filter-row-add-icon" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M5 12h14"></path>
+  <path d="M12 5v14"></path>
+</svg>`;
+
+function addFilterRowButtons(row, manager) {
+  var removeButton = document.createElement("button");
+  removeButton.type = "button";
+  removeButton.className = "filter-row-icon filter-row-remove";
+  removeButton.setAttribute("aria-label", "Remove this filter");
+  removeButton.title = "Remove this filter";
+  removeButton.tabIndex = 0;
+  removeButton.innerHTML = FILTER_REMOVE_ICON_SVG;
+  removeButton.addEventListener("click", (ev) => {
+    var row = ev.currentTarget.closest(filterRowSelector(manager));
+    var rows = filterRowsWithControls(manager);
+    var rowIndex = rows.indexOf(row);
+    var focusRow = rows[rowIndex + 1] || rows[rowIndex - 1] || null;
+    row.remove();
+    updateFilterRowButtons(manager);
+    if (focusRow) {
+      var focusTarget =
+        focusRow.querySelector(".filter-row-add:not([hidden])") ||
+        focusRow.querySelector("select");
+      if (focusTarget) {
+        focusTarget.focus();
+      }
+    }
+  });
+  row.appendChild(removeButton);
+
+  var addButton = document.createElement("button");
+  addButton.type = "button";
+  addButton.className = "filter-row-icon filter-row-add";
+  addButton.setAttribute("aria-label", "Add another filter");
+  addButton.title = "Add another filter";
+  addButton.tabIndex = 0;
+  addButton.innerHTML = FILTER_ADD_ICON_SVG;
+  addButton.addEventListener("click", (ev) => {
+    var row = ev.currentTarget.closest(filterRowSelector(manager));
+    if (row.querySelector("select").name === "_filter_column") {
+      setFilterRowNumber(row, nextFilterRowNumber(manager));
+    }
+    var clone = cloneFilterRow(row);
+    addFilterRowButtons(clone, manager);
+    row.parentNode.insertBefore(clone, row.nextSibling);
+    updateFilterRowButtons(manager);
+    clone.querySelector("select").focus();
+  });
+  row.appendChild(addButton);
+
+  row.querySelector("select").addEventListener("change", () => {
+    updateFilterRowButtons(manager);
+  });
+}
+
+/* Add buttons to the filter rows */
+function addButtonsToFilterRows(manager) {
+  var rows = filterRowsWithControls(manager);
+  rows.forEach((row) => {
+    addFilterRowButtons(row, manager);
+  });
+  updateFilterRowButtons(manager);
+}
+
+/* Set up datalist autocomplete for filter values */
+function initAutocompleteForFilterValues(manager) {
+  function createDataLists() {
+    var facetResults = document.querySelectorAll(
+      manager.selectors.facetResults,
+    );
+    Array.from(facetResults).forEach(function (facetResult) {
+      // Use link text from all links in the facet result
+      var links = Array.from(
+        facetResult.querySelectorAll("li:not(.facet-truncated) a"),
+      );
+      // Create a datalist element
+      var datalist = document.createElement("datalist");
+      datalist.id = "datalist-" + facetResult.dataset.column;
+      // Create an option element for each link text
+      links.forEach(function (link) {
+        var option = document.createElement("option");
+        option.label = link.innerText;
+        option.value = link.dataset.facetValue;
+        datalist.appendChild(option);
+      });
+      // Add the datalist to the facet result
+      facetResult.appendChild(datalist);
+    });
+  }
+  createDataLists();
+  // When any filter column select changes, update the datalist
+  document.body.addEventListener("change", function (event) {
+    if (event.target.name && event.target.name.startsWith("_filter_column")) {
+      event.target
+        .closest(filterRowSelector(manager))
+        .querySelector(".filter-value")
+        .setAttribute("list", "datalist-" + event.target.value);
+    }
+  });
+}
+
+/** Open the column-chooser web component */
+function openColumnChooser() {
+  var chooser = document.querySelector("column-chooser");
+  var data = window._columnChooserData;
+  if (!chooser || !data) return;
+
+  var nonPkColumns = data.allColumns.filter(function (col) {
+    return data.primaryKeys.indexOf(col) === -1;
+  });
+  var selected = data.selectedColumns.filter(function (col) {
+    return data.primaryKeys.indexOf(col) === -1;
+  });
+
+  chooser.open({
+    columns: nonPkColumns,
+    selected: selected,
+    onApply: function (cols) {
+      var params = new URLSearchParams(location.search);
+      params.delete("_col");
+      params.delete("_nocol");
+      params.delete("_next");
+
+      if (cols.length === nonPkColumns.length) {
+        // Check if order matches original - if so, no params needed
+        var orderMatches = cols.every(function (col, i) {
+          return col === nonPkColumns[i];
+        });
+        if (!orderMatches) {
+          cols.forEach(function (col) {
+            params.append("_col", col);
+          });
+        }
+      } else {
+        cols.forEach(function (col) {
+          params.append("_col", col);
+        });
+      }
+      var qs = params.toString();
+      location.href = qs ? "?" + qs : location.pathname;
+    },
+  });
+}
+
+function initCountAll() {
+  var button = document.querySelector(".count-all");
+  if (!button) {
+    return;
+  }
+  button.addEventListener("click", async function () {
+    var count = document.querySelector(".table-count");
+    var error = document.querySelector(".count-error");
+    button.disabled = true;
+    button.textContent = "Counting…";
+    error.textContent = "";
+    try {
+      var response = await fetch(button.dataset.countUrl + location.search, {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+        },
+      });
+      var data = await response.json();
+      if (!response.ok || !data.ok) {
+        throw new Error((data.errors || ["Count failed"]).join(" "));
+      }
+      count.textContent =
+        data.count.toLocaleString("en-US") +
+        (data.count === 1 ? " row" : " rows");
+      button.remove();
+    } catch (ex) {
+      error.textContent = ex.message || "Count failed";
+      button.disabled = false;
+      button.textContent = "count all";
+    }
+  });
+}
+
+// Ensures Table UI is initialized only after the Manager is ready.
+document.addEventListener("datasette_init", function (evt) {
+  const { detail: manager } = evt;
+
+  initCountAll();
+  initializeColumnActions(manager);
+
+  // Main table
+  initDatasetteTable(manager);
+
+  // Other UI functions with interactive JS needs
+  addButtonsToFilterRows(manager);
+  initAutocompleteForFilterValues(manager);
+});
