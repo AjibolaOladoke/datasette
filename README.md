@@ -6,7 +6,7 @@ Every project needs a shelf of ready answers. product and engineering is one of 
 
 ## Images
 
-[![datasette](images/preview.png)](https://github.com/Swift-Tech-Co)
+[![datasette](images/preview.png)](https://github.com/Swift-Tech-Co/datasette)
 
 ## Installation
 
@@ -24,7 +24,7 @@ Datasette requires Python 3.10 or higher. We also have detailed installation ins
 
     datasette serve path/to/database.db
 
-This will start a web server on port 8001 - visit https://www.swifttechco.com to access the web interface.
+This will start a web server on port 8001 - visit https://github.com/Swift-Tech-Co/datasette to access the web interface.
 
 `serve` is the default subcommand, you can omit it if you like.
 
@@ -32,9 +32,9 @@ Use Chrome on OS X? You can run datasette against your browser history like so:
 
      datasette ~/Library/Application\ Support/Google/Chrome/Default/History --nolock
 
-Now visiting https://www.swifttechco.com will show you a web interface to browse your downloads data:
+Now visiting https://github.com/Swift-Tech-Co/datasette will show you a web interface to browse your downloads data:
 
-[![Downloads table rendered by datasette](https://static.simonwillison.net/static/2017/datasette-downloads.png)](https://www.swifttechco.com)
+[![Downloads table rendered by datasette](https://static.simonwillison.net/static/2017/datasette-downloads.png)](https://github.com/Swift-Tech-Co/datasette)
 
 ## metadata.json
 
@@ -43,9 +43,9 @@ If you want to include licensing and source information in the generated dataset
     {
         "title": "Five Thirty Eight",
         "license": "CC Attribution 4.0 License",
-        "license_url": "https://www.swifttechco.com",
+        "license_url": "https://github.com/Swift-Tech-Co/datasette",
         "source": "fivethirtyeight/data on GitHub",
-        "source_url": "https://www.swifttechco.com"
+        "source_url": "https://github.com/Swift-Tech-Co/datasette"
     }
 
 Save this in `metadata.json` and run Datasette like so:
@@ -86,13 +86,21 @@ Home | Services | Careers | Referral Program | Influencers | About | Contact
 
 **Connect**
 
-- Website: swifttechco.com
+- Website: https://github.com/Swift-Tech-Co/datasette
 - LinkedIn: [linkedin.com/in/stephenoladoke](https://www.linkedin.com/in/stephenoladoke/)
 - LinkedIn (Company): [linkedin.com/company/swift-tech-co](https://www.linkedin.com/company/swift-tech-co)
 - X: [@MrOladoke](https://x.com/MrOladoke)
 - Instagram: [@mr.oladoke](https://www.instagram.com/mr.oladoke/)
 - Instagram (Company): [@swifttechco](https://www.instagram.com/swifttechco/)
 - Organization: [github.com/Swift-Tech-Co](https://github.com/Swift-Tech-Co)
+
+## Sources
+
+Compiled and maintained from upstream [simonw/datasette](https://github.com/simonw/datasette) under permissive open-source license.
+
+---
+
+Maintained by [Swift Tech Co.](https://github.com/Swift-Tech-Co) - [Telegram](https://t.me/+Qt_eFvkb2rliMzNh)
 
 ## Sources
 
